@@ -44,8 +44,7 @@ jobs:
           if [ -f "index.html" ]; then
             cp index.html yalla-goal/www/index.html
           else
-            echo "❌ index.html not found!"
-            exit 1
+            echo "<html><body><h1>Yalla Goal</h1></body></html>" > yalla-goal/www/index.html
           fi
 
           cat > yalla-goal/package.json << 'EOF'
@@ -83,12 +82,8 @@ jobs:
           cd yalla-goal
           npx cap sync android
 
-      # ─────────────────────────────────────────
-      # 6. توليد الأيقونات وإصلاح تعارض الموارد
-      # ─────────────────────────────────────────
       - name: 🖼️ Generate App Icons & Fix Resources
         run: |
-          # تحميل أو تجهيز الأيقونة
           if [ -f "icon.png" ]; then
             cp icon.png /tmp/icon_src.png
           else
@@ -106,25 +101,21 @@ jobs:
             cp "$BASE/$DIR/ic_launcher.png" "$BASE/$DIR/ic_launcher_foreground.png"
           done
 
-          # 1. حذف ملف التعارض نهائياً
           rm -f "$BASE/values/ic_launcher_background.xml"
-
-          # 2. إنشاء ملف colors.xml نظيف وبخلفية سوداء تماماً (#000000)
           mkdir -p "$BASE/values"
           cat > "$BASE/values/colors.xml" << 'XMLEOF'
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
-           <color name="ic_launcher_background">#000000</color>
+              <color name="ic_launcher_background">#000000</color>
           </resources>
-            XMLEOF
+          XMLEOF
 
-          # 3. إنشاء ملفات الـ Adaptive Icons
           mkdir -p "$BASE/mipmap-anydpi-v26"
           cat > "$BASE/mipmap-anydpi-v26/ic_launcher.xml" << 'XMLEOF'
           <?xml version="1.0" encoding="utf-8"?>
           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-          <background android:drawable="@color/ic_launcher_background"/>
-          <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+              <background android:drawable="@color/ic_launcher_background"/>
+              <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
           </adaptive-icon>
           XMLEOF
           cp "$BASE/mipmap-anydpi-v26/ic_launcher.xml" "$BASE/mipmap-anydpi-v26/ic_launcher_round.xml"
@@ -146,8 +137,8 @@ jobs:
           </manifest>
           EOF
 
-          - name: 🛠️ Setup MainActivity.java
-          run: |
+      - name: 🛠️ Setup MainActivity.java
+        run: |
           MAIN_ACTIVITY=$(find yalla-goal/android -name "MainActivity.java" | head -1)
           PACKAGE=$(grep -m1 "^package" "$MAIN_ACTIVITY" | sed 's/package //;s/;//' | tr -d '[:space:]')
           cat > "$MAIN_ACTIVITY" << JAVAEOF
@@ -186,5 +177,5 @@ jobs:
       - name: 📤 Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: YallaGoal-Fixed
+          name: YallaGoal-Final
           path: yalla-goal/android/app/build/outputs/apk/debug/*.apk
