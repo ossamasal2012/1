@@ -19,21 +19,14 @@ jobs:
         with:
           node-version: "20"
 
-      - name: ☕ Setup Java 21
+      - name: ☕ Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: "temurin"
-          java-version: "21"
+          java-version: "17"
 
       - name: 🤖 Setup Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: 📦 Install Android Build Tools
-        run: |
-          sdkmanager --sdk_root=$ANDROID_SDK_ROOT \
-            "build-tools;34.0.0" \
-            "platforms;android-34" \
-            "platform-tools"
 
       - name: 🖼️ Install ImageMagick
         run: sudo apt-get install -y imagemagick
@@ -44,21 +37,27 @@ jobs:
           if [ -f "index.html" ]; then
             cp index.html yalla-goal/www/index.html
           else
-            echo "<html><body><h1>Yalla Goal</h1></body></html>" > yalla-goal/www/index.html
+            echo "<html><body style='background:#000;color:#fff;'><h1>Yalla Goal</h1></body></html>" > yalla-goal/www/index.html
           fi
 
           cat > yalla-goal/package.json << 'EOF'
           {
             "name": "yalla-goal",
             "version": "2.3.0",
-            "scripts": { "build": "echo ok" }
+            "dependencies": {
+              "@capacitor/core": "^6.0.0",
+              "@capacitor/android": "^6.0.0"
+            },
+            "devDependencies": {
+              "@capacitor/cli": "^6.0.0"
+            }
           }
           EOF
 
-      - name: 📥 Install Capacitor
+      - name: 📥 Install Dependencies
         run: |
           cd yalla-goal
-          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npm install
 
       - name: ⚙️ Capacitor Config
         run: |
@@ -67,22 +66,17 @@ jobs:
             "appId": "com.yallagoal.app",
             "appName": "YallaGoal",
             "webDir": "www",
-            "server": { "androidScheme": "https", "cleartext": true, "allowNavigation": ["*"] },
-            "android": { "allowMixedContent": true, "captureInput": true }
+            "server": { "androidScheme": "https", "cleartext": true }
           }
           EOF
 
-      - name: 🤖 Add Android Platform
+      - name: 🤖 Add & Sync Android
         run: |
           cd yalla-goal
           npx cap add android
-
-      - name: 🔄 Capacitor Sync
-        run: |
-          cd yalla-goal
           npx cap sync android
 
-      - name: 🖼️ Generate App Icons & Fix Resources
+      - name: 🖼️ App Icons (Pure Black)
         run: |
           if [ -f "icon.png" ]; then
             cp icon.png /tmp/icon_src.png
@@ -105,37 +99,17 @@ jobs:
           mkdir -p "$BASE/values"
           cat > "$BASE/values/colors.xml" << 'XMLEOF'
           <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <color name="ic_launcher_background">#000000</color>
-          </resources>
+          <resources><color name="ic_launcher_background">#000000</color></resources>
           XMLEOF
 
           mkdir -p "$BASE/mipmap-anydpi-v26"
           cat > "$BASE/mipmap-anydpi-v26/ic_launcher.xml" << 'XMLEOF'
           <?xml version="1.0" encoding="utf-8"?>
           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@color/ic_launcher_background"/>
-              <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+              <background android:drawable="@color/ic_launcher_background"/><foreground android:drawable="@mipmap/ic_launcher_foreground"/>
           </adaptive-icon>
           XMLEOF
           cp "$BASE/mipmap-anydpi-v26/ic_launcher.xml" "$BASE/mipmap-anydpi-v26/ic_launcher_round.xml"
-
-      - name: 📝 Write AndroidManifest.xml
-        run: |
-          cat > yalla-goal/android/app/src/main/AndroidManifest.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET" />
-              <application android:allowBackup="true" android:icon="@mipmap/ic_launcher" android:label="Yalla Goal" android:roundIcon="@mipmap/ic_launcher_round" android:supportsRtl="true" android:theme="@style/AppTheme" android:usesCleartextTraffic="true">
-                  <activity android:name=".MainActivity" android:exported="true" android:theme="@style/AppTheme.NoActionBarLaunch" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode" android:launchMode="singleTask">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          EOF
 
       - name: 🛠️ Setup MainActivity.java
         run: |
@@ -162,20 +136,27 @@ jobs:
           }
           JAVAEOF
 
-      - name: 🔧 Fix Gradle & Kotlin
+      - name: 🔧 Fix Build Dependencies
         run: |
-          cat >> yalla-goal/android/app/build.gradle << 'EOF'
-          configurations.all { resolutionStrategy { force "org.jetbrains.kotlin:kotlin-stdlib:1.9.0" } }
+          # تحديث ملف build.gradle لفرض نسخ المكتبات المتوافقة وحل تعارض Kotlin
+          GRADLE_FILE="yalla-goal/android/app/build.gradle"
+          cat >> "$GRADLE_FILE" << 'EOF'
+          configurations.all {
+              resolutionStrategy {
+                  force "org.jetbrains.kotlin:kotlin-stdlib:1.9.10"
+                  force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.10"
+              }
+          }
           EOF
           chmod +x yalla-goal/android/gradlew
 
       - name: 🏗️ Build Debug APK
         run: |
           cd yalla-goal/android
-          ./gradlew assembleDebug
+          ./gradlew clean assembleDebug --no-daemon
 
       - name: 📤 Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: YallaGoal-Final
+          name: YallaGoal-V2.3
           path: yalla-goal/android/app/build/outputs/apk/debug/*.apk
