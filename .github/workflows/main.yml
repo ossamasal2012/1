@@ -28,32 +28,14 @@ jobs:
       - name: 🤖 Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: 📦 Install Android Build Tools
-        run: |
-          sdkmanager --sdk_root=$ANDROID_SDK_ROOT \
-            "build-tools;34.0.0" \
-            "platforms;android-34" \
-            "platform-tools"
-
-      - name: 🖼️ Install ImageMagick
-        run: sudo apt-get install -y imagemagick
-
       - name: 🗂️ Create Project Structure
         run: |
           mkdir -p yalla-goal/www
-          if [ -f "index.html" ]; then
-            cp index.html yalla-goal/www/index.html
-          elif [ -f "tindex.html" ]; then
-            cp tindex.html yalla-goal/www/index.html
-          else
-            echo "❌ لم يُعثر على ملف HTML"
-            exit 1
-          fi
-
+          cp index.html yalla-goal/www/index.html
           cat > yalla-goal/package.json << 'EOF'
           {
             "name": "yalla-goal",
-            "version": "2.3.0",
+            "version": "2.3.5",
             "scripts": { "build": "echo ok" }
           }
           EOF
@@ -63,15 +45,15 @@ jobs:
           cd yalla-goal
           npm install @capacitor/core @capacitor/cli @capacitor/android
 
-      - name: ⚙️ Capacitor Config
+      - name: ⚙️ Create Capacitor Config
         run: |
           cat > yalla-goal/capacitor.config.json << 'EOF'
           {
             "appId": "com.yallagoal.app",
-            "appName": "YallaGoal",
+            "appName": "يلا گول",
             "webDir": "www",
             "server": { "androidScheme": "https", "cleartext": true, "allowNavigation": ["*"] },
-            "android": { "allowMixedContent": true, "captureInput": true, "webContentsDebuggingEnabled": false }
+            "android": { "allowMixedContent": true }
           }
           EOF
 
@@ -80,125 +62,47 @@ jobs:
           cd yalla-goal
           npx cap add android
 
-      - name: 🔄 Capacitor Sync
+      - name: 🔧 Fix Kotlin & Build Settings
+        run: |
+          APP_GRADLE="yalla-goal/android/app/build.gradle"
+          # حل تعارضات Kotlin
+          cat >> "$APP_GRADLE" << 'EOF'
+          configurations.all {
+              resolutionStrategy {
+                  force "org.jetbrains.kotlin:kotlin-stdlib:1.9.0"
+              }
+          }
+          EOF
+          # تحديث نسخة الأندرويد المدعومة
+          sed -i 's/targetSdkVersion [0-9]*/targetSdkVersion 34/' "$APP_GRADLE"
+
+      - name: 🔄 Sync Capacitor
         run: |
           cd yalla-goal
           npx cap sync android
 
-      # ─────────────────────────────────────────
-      # 6. 🖼️ توليد الأيقونات وإصلاح تعارض الألوان
-      # ─────────────────────────────────────────
-      - name: 🖼️ Generate All App Icons
-        run: |
-          if [ -f "icon.png" ]; then
-            cp icon.png /tmp/icon_src.png
-          else
-            curl -fsSL "https://i.ibb.co/CKJ5NVv7/Screenshot-2026-04-21-1-52-19-PM.png" -o /tmp/icon_src.png
-          fi
-
-          if [ -f "icon_fg.png" ]; then
-            cp icon_fg.png /tmp/icon_fg.png
-          else
-            cp /tmp/icon_src.png /tmp/icon_fg.png
-          fi
-
-          BASE="yalla-goal/android/app/src/main/res"
-          declare -A SIZES=( ["mipmap-mdpi"]=48 ["mipmap-hdpi"]=72 ["mipmap-xhdpi"]=96 ["mipmap-xxhdpi"]=144 ["mipmap-xxxhdpi"]=192 )
-
-          for DIR in "${!SIZES[@]}"; do
-            SIZE=${SIZES[$DIR]}
-            mkdir -p "$BASE/$DIR"
-            convert /tmp/icon_src.png -resize ${SIZE}x${SIZE}^ -gravity center -extent ${SIZE}x${SIZE} -background "#020617" -flatten "$BASE/$DIR/ic_launcher.png"
-            convert /tmp/icon_src.png -resize ${SIZE}x${SIZE}^ -gravity center -extent ${SIZE}x${SIZE} \( +clone -fill black -colorize 100 -fill white -draw "circle $((SIZE/2)),$((SIZE/2)) $((SIZE/2)),0" \) -alpha off -compose CopyOpacity -composite -background "#020617" -flatten "$BASE/$DIR/ic_launcher_round.png"
-            convert /tmp/icon_fg.png -resize ${SIZE}x${SIZE}^ -gravity center -background none -extent $((SIZE*4/3))x$((SIZE*4/3)) "$BASE/$DIR/ic_launcher_foreground.png" 2>/dev/null || cp "$BASE/$DIR/ic_launcher.png" "$BASE/$DIR/ic_launcher_foreground.png"
-          done
-
-          mkdir -p "$BASE/mipmap-anydpi-v26"
-          cat > "$BASE/mipmap-anydpi-v26/ic_launcher.xml" << 'XMLEOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@color/ic_launcher_background"/>
-              <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
-          </adaptive-icon>
-          XMLEOF
-          cp "$BASE/mipmap-anydpi-v26/ic_launcher.xml" "$BASE/mipmap-anydpi-v26/ic_launcher_round.xml"
-
-          # إصلاح التعارض: حذف الملف القديم وتحديث colors.xml
-          mkdir -p "$BASE/values"
-          rm -f "$BASE/values/ic_launcher_background.xml"
-          if [ -f "$BASE/values/colors.xml" ]; then
-            sed -i '/ic_launcher_background/d' "$BASE/values/colors.xml"
-            sed -i 's|</resources>|    <color name="ic_launcher_background">#020617</color>\n</resources>|' "$BASE/values/colors.xml"
-          else
-            echo -e "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n    <color name=\"ic_launcher_background\">#020617</color>\n</resources>" > "$BASE/values/colors.xml"
-          fi
-
-      - name: 🌐 Network Security Config
-        run: |
-          mkdir -p yalla-goal/android/app/src/main/res/xml
-          cat > yalla-goal/android/app/src/main/res/xml/network_security_config.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <network-security-config><base-config cleartextTrafficPermitted="true"><trust-anchors><certificates src="system"/><certificates src="user"/></trust-anchors></base-config></network-security-config>
-          EOF
-
-      - name: 📝 Write AndroidManifest.xml
-        run: |
-          cat > yalla-goal/android/app/src/main/AndroidManifest.xml << 'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET" />
-              <application android:allowBackup="true" android:icon="@mipmap/ic_launcher" android:label="@string/app_name" android:roundIcon="@mipmap/ic_launcher_round" android:supportsRtl="true" android:theme="@style/AppTheme" android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/network_security_config">
-                  <activity android:name=".MainActivity" android:exported="true" android:theme="@style/AppTheme.NoActionBarLaunch"><intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter></activity>
-              </application>
-          </manifest>
-          EOF
-
-      - name: 🛠️ Write MainActivity.java
-        run: |
-          MAIN_ACTIVITY=$(find yalla-goal/android -name "MainActivity.java" | head -1)
-          PACKAGE=$(grep -m1 "^package" "$MAIN_ACTIVITY" | sed 's/package //;s/;//' | tr -d '[:space:]')
-          cat > "$MAIN_ACTIVITY" << JAVAEOF
-          package ${PACKAGE};
-          import android.os.Bundle;
-          import android.webkit.WebSettings;
-          import android.webkit.WebView;
-          import com.getcapacitor.BridgeActivity;
-          public class MainActivity extends BridgeActivity {
-              @Override
-              public void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-                  WebView webView = getBridge().getWebView();
-                  if (webView != null) {
-                      WebSettings s = webView.getSettings();
-                      s.setJavaScriptEnabled(true);
-                      s.setDomStorageEnabled(true);
-                      s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-                  }
-              }
-          }
-          JAVAEOF
-
-      - name: 🔧 Fix app/build.gradle
-        run: |
-          cat >> yalla-goal/android/app/build.gradle << 'EOF'
-          configurations.all { resolutionStrategy { force "org.jetbrains.kotlin:kotlin-stdlib:1.9.0" } }
-          EOF
-
-      - name: 🔐 Grant Gradle Permission
-        run: chmod +x yalla-goal/android/gradlew
-
       - name: 🏗️ Build Debug APK
         run: |
           cd yalla-goal/android
-          ./gradlew assembleDebug --stacktrace
+          chmod +x gradlew
+          ./gradlew assembleDebug
 
-      - name: 🔍 Find and Upload APK
+      - name: 🔍 Dynamic APK Finder
+        id: find_apk
         run: |
-          APK_PATH=$(find yalla-goal/android -name "*.apk" -type f | head -1)
-          echo "APK_PATH=$APK_PATH" >> $GITHUB_ENV
+          # البحث في كل المجلدات الفرعية عن أي ملف ينتهي بـ .apk
+          # وتخزينه في متغير البيئة للوصول إليه في الخطوة التالية
+          APK_PATH=$(find yalla-goal/android -name "*.apk" -type f | grep "debug" | head -1)
+          if [ -z "$APK_PATH" ]; then 
+            echo "❌ لم يتم العثور على ملف APK!"
+            exit 1
+          fi
+          echo "Found APK at: $APK_PATH"
+          echo "FINAL_APK_PATH=$APK_PATH" >> $GITHUB_ENV
 
-      - name: 📤 Upload APK
+      - name: 📤 Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: YallaGoal-v2.3-debug
-          path: ${{ env.APK_PATH }}
+          name: YallaGoal-Final-v2.3.5
+          path: ${{ env.FINAL_APK_PATH }}
+          retention-days: 30
