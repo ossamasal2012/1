@@ -1,0 +1,282 @@
+<!DOCTYPE html><html lang="ar" dir="rtl"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>يلا گـــول | Yalla Goal </title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css">
+    <script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
+
+        body {
+            font-family: 'Tajawal', sans-serif;
+            background-color: #020617;
+            color: #f1f5f9;
+            height: 100vh;
+            overflow: hidden;
+            margin: 0;
+        }
+
+        .channel-item {
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
+
+        .active-card {
+            background: linear-gradient(270deg, rgba(16, 185, 129, 0.2) 0%, rgba(15, 23, 42, 0.8) 100%) !important;
+            border-color: #10b981 !important;
+        }
+
+        .active-btn {
+            background: #10b981 !important;
+            color: white !important;
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+
+        #dynamic-player-root {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        .plyr {
+            height: 100% !important;
+            width: 100% !important;
+        }
+
+        .custom-hide-controls .plyr__controls {
+            opacity: 0 !important;
+            pointer-events: none !important;
+            transform: translateY(10px);
+        }
+
+        .custom-show-controls .plyr__controls {
+            opacity: 1 !important;
+            pointer-events: all !important;
+            transform: translateY(0);
+        }
+
+        .overlay-screen {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #020617;
+            gap: 1rem;
+        }
+        
+        #iPlayer {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            border: 0;
+            z-index: 40;
+            display: none;
+        }
+    </style>
+</head>
+<body class="flex flex-col lg:flex-row">
+
+    <aside class="w-full lg:w-80 flex flex-col bg-slate-950 border-l border-slate-900 z-50 order-2 lg:order-1 flex-1 lg:flex-none lg:h-full overflow-hidden">
+        <div class="p-5 border-b border-slate-900 hidden lg:block">
+            <h1 class="text-xl font-black text-emerald-500">يلا گـــول </h1>
+            <p class="text-[9px] text-slate-500 font-bold uppercase tracking-widest">تطوير أُسامه - v2.3</p>
+        </div>
+
+        <div class="p-4 shrink-0">
+            <input type="text" id="searchInput" oninput="searchChannels()" placeholder="بحث سريع..."
+                class="w-full bg-slate-900 border border-slate-800 rounded-lg py-2 px-4 text-xs focus:outline-none focus:border-emerald-500 transition-all text-white">
+        </div>
+
+        <div id="categoryMenu" class="px-4 pb-2 overflow-x-auto no-scrollbar flex gap-2 shrink-0"></div>
+
+<div id="channelsBox" class="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar"></div>   </aside>
+
+    <main id="mainPlayerArea" class="w-full lg:flex-1 bg-black relative order-1 lg:order-2 h-[35vh] lg:h-full overflow-hidden">
+        
+        <div id="placeholderScreen" class="overlay-screen">
+            <div class="w-12 h-12 rounded-full border-2 border-slate-800 border-t-emerald-500 animate-spin"></div>
+            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">انتظار القناة...</span>
+        </div>
+
+        <div id="errorScreen" class="overlay-screen hidden text-center px-10">
+            <i class="fa-solid fa-triangle-exclamation text-red-500 text-3xl mb-2"></i>
+            <h3 class="text-sm font-bold">خطأ في التشغيل</h3>
+            <p class="text-[10px] text-slate-500">المصدر غير متاح حالياً، جرب قناة أخرى</p>
+        </div>
+
+        <div id="dynamic-player-root"></div>
+
+        <iframe id="iPlayer" allowfullscreen sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="no-referrer"></iframe>
+
+    </main>
+
+    <script>
+        
+let myChannels = [];
+
+async function loadChannels() {
+    try {
+        // عرض تحميل مؤقت
+        document.getElementById('placeholderScreen').classList.remove('hidden');
+
+    const res = await fetch("https://raw.githubusercontent.com/ossamasal2012/yalla-data/main/channels.json");
+        const data = await res.json();
+
+        myChannels = data;
+
+        renderMenu();
+        renderChannels();
+
+        // اخفاء التحميل بعد النجاح
+        document.getElementById('placeholderScreen').classList.add('hidden');
+
+    } catch (err) {
+        console.error("خطأ في تحميل القنوات", err);
+        document.getElementById('errorScreen').classList.remove('hidden');
+    }
+}
+
+        let hls = null;
+        let plyr = null;
+        let currentCat = "الكل";
+        let searchQuery = "";
+        let favorites = JSON.parse(localStorage.getItem('yalla_favs')) || [];
+        let controlsVisible = true;
+
+
+        function renderMenu() {
+            const cats = ["الكل", "المفضلة", ...new Set(myChannels.map(c => c[2]))];
+            document.getElementById('categoryMenu').innerHTML = cats.map(c => `
+                <button onclick="filter('${c}')" class="px-3 py-1 rounded-lg text-[10px] font-bold transition-all border border-slate-800 bg-slate-900 text-slate-400 whitespace-nowrap ${currentCat === c ? 'active-btn' : ''}">
+                    ${c}
+                </button>
+            `).join('');
+        }
+
+function renderChannels() {
+    const box = document.getElementById('channelsBox');
+    const filtered = myChannels.filter(c => {
+        const matchCat = currentCat === "الكل" || (currentCat === "المفضلة" ? favorites.includes(c[0]) : c[2] === currentCat);
+        return matchCat && c[0].toLowerCase().includes(searchQuery.toLowerCase());
+    });
+
+    box.innerHTML = filtered.map(ch => {
+        const isFav = favorites.includes(ch[0]);
+        return `
+        <div onclick="playChannel('${ch[1]}', '${ch[3]}', '${ch[0]}', this)" 
+            class="channel-item bg-slate-900/40 border border-slate-800/40 p-2.5 rounded-lg flex items-center justify-between group">
+            <span class="text-xs font-bold text-slate-300 group-hover:text-emerald-400 transition-colors">${ch[0]}</span>
+            <button onclick="toggleFavorite(event, '${ch[0]}')" class="focus:outline-none p-1">
+                <i class="fa-star ${isFav ? 'fa-solid text-amber-500' : 'fa-regular text-slate-700'} text-sm transition-all hover:scale-110"></i>
+            </button>
+        </div>`;
+    }).join('');
+}
+
+        function filter(c) { currentCat = c; renderMenu(); renderChannels(); }
+        function searchChannels() { searchQuery = document.getElementById('searchInput').value; renderChannels(); }
+
+        function cleanup() {
+            if (hls) { hls.destroy(); hls = null; }
+            if (plyr) { plyr.destroy(); plyr = null; }
+            const root = document.getElementById('dynamic-player-root');
+            root.innerHTML = "";
+            const iframe = document.getElementById('iPlayer');
+            iframe.src = "about:blank";
+            iframe.style.display = "none";
+            document.getElementById('errorScreen').classList.add('hidden');
+            document.getElementById('placeholderScreen').classList.remove('hidden');
+            controlsVisible = true;
+        }
+
+        function setupToggleLogic() {
+            const plyrContainer = document.querySelector('.plyr');
+            if (!plyrContainer) return;
+            plyrContainer.classList.add('custom-show-controls');
+            plyrContainer.addEventListener('click', (e) => {
+                if (e.target.closest('.plyr__controls') || e.target.closest('.plyr__menu')) return;
+                controlsVisible = !controlsVisible;
+                plyrContainer.classList.toggle('custom-hide-controls', !controlsVisible);
+                plyrContainer.classList.toggle('custom-show-controls', controlsVisible);
+            });
+        }
+        function toggleFavorite(event, name) {
+    event.stopImmediatePropagation(); // لمنع تشغيل القناة عند الضغط على النجمة
+    
+    const index = favorites.indexOf(name);
+    if (index > -1) {
+        favorites.splice(index, 1); // إزالة من المفضلة
+    } else {
+        favorites.push(name); // إضافة للمفضلة
+    }
+    
+    // حفظ التعديلات في المتصفح
+    localStorage.setItem('yalla_favs', JSON.stringify(favorites));
+    
+    // تحديث القائمة فوراً
+    renderChannels();
+}
+
+        function playChannel(url, type, name, el) {
+            document.querySelectorAll('.channel-item').forEach(i => i.classList.remove('active-card'));
+            el.classList.add('active-card');
+            
+            cleanup();
+
+            if (type === 'i') {
+                const iframe = document.getElementById('iPlayer');
+                iframe.style.display = "block";
+                iframe.src = url;
+                document.getElementById('placeholderScreen').classList.add('hidden');
+            } else {
+                const root = document.getElementById('dynamic-player-root');
+                const video = document.createElement('video');
+                video.id = "vPlayer";
+                video.className = "w-full h-full";
+                video.autoplay = true;
+                video.setAttribute('playsinline', '');
+                video.setAttribute('crossorigin', '');
+                root.appendChild(video);
+
+                const plyrOptions = {
+                    controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'settings', 'fullscreen'],
+                    hideControls: false,
+                    clickToPlay: false
+                };
+
+                if (Hls.isSupported()) {
+                    hls = new Hls();
+                    hls.loadSource(url);
+                    hls.attachMedia(video);
+                    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                        plyr = new Plyr(video, plyrOptions);
+                        document.getElementById('placeholderScreen').classList.add('hidden');
+                        setTimeout(setupToggleLogic, 500);
+                    });
+                    hls.on(Hls.Events.ERROR, (event, data) => {
+                        if (data.fatal) {
+                            document.getElementById('placeholderScreen').classList.add('hidden');
+                            document.getElementById('errorScreen').classList.remove('hidden');
+                        }
+                    });
+                } else {
+                    video.src = url;
+                    plyr = new Plyr(video, plyrOptions);
+                    document.getElementById('placeholderScreen').classList.add('hidden');
+                    setTimeout(setupToggleLogic, 500);
+                }
+            }
+        }
+
+        loadChannels();
+    </script>
+</body></html>
